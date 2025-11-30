@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- ✅ 版本號 v3.1 -->
-    <title>安全版雲端人臉辨識 (v3.1)</title>
+    <!-- ✅ 版本號 v3.2 -->
+    <title>安全版雲端人臉辨識 (v3.2)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
@@ -83,7 +83,7 @@
     <!-- 1. 登入鎖定 -->
     <div id="login-screen">
         <div class="w-full max-w-sm text-center space-y-6">
-            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v3.1</h1>
+            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v3.2</h1>
             <input type="password" id="password-input" placeholder="輸入 App 密碼 (預設 1234)" class="w-full px-4 py-3 rounded bg-gray-800 border border-gray-700 text-center text-white text-xl">
             <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold text-lg">進入系統</button>
             <p id="login-msg" class="text-red-400 text-sm h-5"></p>
@@ -94,7 +94,7 @@
     <div id="app-container" class="app-content flex-col min-h-screen p-3 pb-10">
         <header class="text-center mb-4 mt-2 flex justify-between items-center px-2">
             <div class="text-left">
-                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v3.1</h1>
+                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v3.2</h1>
                 <p class="text-xs text-gray-400">連線狀態：<span id="db-status" class="text-yellow-500">驗證中...</span></p>
             </div>
             <div class="text-right">
@@ -134,7 +134,7 @@
             <!-- 批次上傳區 -->
             <div id="upload-panel" class="bg-gray-800 p-4 rounded-xl border border-gray-700 panel-disabled transition-all duration-500">
                 <h3 class="font-bold text-green-400 mb-3 text-sm uppercase flex items-center gap-2">
-                    <span>批次建立資料 (寬容模式)</span>
+                    <span>批次建立資料 (全防護)</span>
                     <span id="upload-status-icon" class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-500">等待初始化</span>
                 </h3>
                 
@@ -197,7 +197,7 @@
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
-                    document.getElementById('db-status').textContent = '已安全連線 (v3.1)';
+                    document.getElementById('db-status').textContent = '已安全連線 (v3.2)';
                     document.getElementById('db-status').className = 'text-green-500 font-bold';
                     logToScreen("已取得資料庫權限");
                     setupRealtimeListener();
@@ -275,7 +275,6 @@
             }
         });
 
-        // 輔助函式：強制縮圖與轉檔 (關鍵！)
         function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -285,7 +284,7 @@
                     img.src = event.target.result;
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 500; // 降低到 500px 確保速度極快
+                        const MAX_WIDTH = 500; 
                         const scaleSize = MAX_WIDTH / img.width;
                         if (scaleSize < 1) {
                             canvas.width = MAX_WIDTH;
@@ -297,7 +296,6 @@
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         
-                        // 強制轉為 JPEG 並壓縮品質
                         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                         const resultImg = new Image();
                         resultImg.src = dataUrl;
@@ -309,7 +307,7 @@
             });
         }
 
-        // 3. 批次上傳 (含防卡死機制 + 強力縮圖)
+        // 3. 批次上傳 (全流程防護版)
         document.getElementById('batch-input').addEventListener('change', async (e) => {
             if (!isAuthenticated) return alert("權限不足：無法寫入資料庫");
             
@@ -328,46 +326,55 @@
 
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                const name = file.name.replace(/\.[^/.]+$/, ""); // 去除副檔名
+                const name = file.name.replace(/\.[^/.]+$/, ""); 
                 
                 progressText.textContent = `處理中 (${i+1}/${files.length}): ${name}`;
                 progressBar.style.width = `${((i+1)/files.length)*100}%`;
                 
-                // ✅ 修正：超時放寬到 60 秒 (給予極大寬容)
+                // ✅ 30秒超時，保護「整個」流程
                 const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Timeout")), 60000)
+                    setTimeout(() => reject(new Error("Timeout")), 30000)
                 );
 
                 try {
-                    const processPromise = async () => {
+                    // 將所有動作包在一起：讀圖 -> 縮圖 -> 辨識 -> 上傳
+                    const taskPromise = async () => {
                         logToScreen(`[${i+1}] 讀取並縮圖...`);
                         const img = await compressImage(file);
                         
                         logToScreen(`[${i+1}] AI 辨識中...`);
                         const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
-                        return detection;
+                        
+                        if (detection) {
+                            const descriptorArray = Array.from(detection.descriptor);
+                            logToScreen(`[${i+1}] 上傳資料庫...`);
+                            // 這一步也會被 timeout 保護到
+                            await window.dbAddDoc(window.dbCollection(window.db, "faces"), {
+                                label: name,
+                                descriptors: descriptorArray,
+                                timestamp: new Date()
+                            });
+                            return "success";
+                        } else {
+                            return "no_face";
+                        }
                     };
 
-                    const detection = await Promise.race([processPromise(), timeoutPromise]);
+                    // 比賽：看是任務先做完，還是 30 秒先到
+                    const result = await Promise.race([taskPromise(), timeoutPromise]);
 
-                    if (detection) {
-                        const descriptorArray = Array.from(detection.descriptor);
-                        logToScreen(`[${i+1}] 上傳資料庫...`);
-                        await window.dbAddDoc(window.dbCollection(window.db, "faces"), {
-                            label: name,
-                            descriptors: descriptorArray,
-                            timestamp: new Date()
-                        });
+                    if (result === "success") {
                         logToScreen(`[${i+1}] 成功存入！`);
                         successCount++;
                     } else {
                         logToScreen(`[${i+1}] 失敗：找不到人臉`);
                         failCount++;
                     }
+
                 } catch (err) {
                     console.error(err);
                     if (err.message === "Timeout") {
-                        logToScreen(`[${i+1}] 跳過：嚴重超時 (超過60秒)`);
+                        logToScreen(`[${i+1}] 跳過：網路或AI卡住 (超過30秒)`);
                     } else {
                         logToScreen(`[${i+1}] 錯誤：${err.message}`);
                     }
