@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <!-- 設定手機版面禁止縮放，避免操作時畫面跑掉 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>私密人臉辨識系統</title>
+    <!-- 引入 Tailwind CSS (樣式庫) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Face-api.js (人臉辨識核心) -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        body { 
+            background-color: #0f172a; /* 深藍色背景 */
+            color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            touch-action: manipulation; /* 優化觸控 */
+        }
+        
+        /* 登入畫面樣式 */
+        #login-screen {
+            position: fixed;
+            inset: 0;
+            background: #0f172a;
+            z-index: 100; /* 確保在最上層 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            transition: opacity 0.3s;
+        }
+
+        /* 攝影機容器 */
+        .camera-wrapper { 
+            position: relative; 
+            width: 100%; 
+            max-width: 500px; 
+            margin: 0 auto; 
+            aspect-ratio: 3/4; /* 手機直向比例 */
+            background: #000; 
+            border-radius: 12px; 
+            overflow: hidden; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        }
+        
+        /* 影片與畫布鏡像翻轉，像照鏡子一樣 */
+        video, canvas { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            transform: scaleX(-1); 
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* 增加手機按鈕的點擊區域 */
+        .btn-touch {
+            min-height: 48px; 
+            font-size: 16px;
+        }
+
+        /* 預設隱藏主畫面，登入後才顯示 */
+        .app-content {
+            display: none; 
+        }
+        .app-content.active {
+            display: flex;
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- =========================
+         1. 登入鎖定畫面 
+    ========================== -->
+    <div id="login-screen">
+        <div class="w-full max-w-sm text-center space-y-6">
+            <div class="mb-4">
+                <div class="w-16 h-16 bg-blue-600 rounded-full mx-auto flex items-center justify-center mb-2 shadow-lg shadow-blue-500/50">
+                    <span class="text-3xl">🔒</span>
+                </div>
+                <h1 class="text-2xl font-bold">私密存取</h1>
+                <p class="text-gray-400 text-sm">此系統受密碼保護</p>
+            </div>
+            
+            <div class="space-y-3">
+                <input type="password" id="password-input" placeholder="輸入密碼 (預設 1234)" 
+                    class="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 text-center text-xl tracking-widest focus:border-blue-500 outline-none transition text-white">
+                
+                <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold text-lg transition active:scale-95 shadow-lg">
+                    解鎖進入
+                </button>
+            </div>
+            <p id="login-msg" class="text-red-400 text-sm h-5"></p>
+        </div>
+    </div>
+
+    <!-- =========================
+         2. 主應用程式內容 
+    ========================== -->
+    <div id="app-container" class="app-content flex-col min-h-screen p-3 pb-10">
+        <header class="text-center mb-4 mt-2 flex justify-between items-center px-2">
+            <h1 class="text-xl font-bold text-blue-400">AI 辨識系統</h1>
+            <button onclick="logout()" class="text-xs text-gray-400 border border-gray-700 px-3 py-1 rounded hover:bg-gray-800">登出</button>
+        </header>
+
+        <!-- 攝影機區 -->
+        <div class="camera-wrapper border border-gray-700 relative">
+            <!-- Loading 遮罩 -->
+            <div id="loading-spinner" class="absolute inset-0 bg-black/90 flex flex-col justify-center items-center z-50 hidden">
+                <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent mb-3"></div>
+                <p id="loading-text" class="text-sm font-light tracking-wider text-white">載入中...</p>
+            </div>
+            <video id="video" autoplay muted playsinline></video>
+        </div>
+
+        <!-- 訊息提示框 -->
+        <div id="msg-box" class="w-full max-w-lg mx-auto mt-3 p-3 rounded-lg text-sm text-center hidden font-bold shadow-md"></div>
+
+        <!-- 操作面板 -->
+        <div class="w-full max-w-lg mx-auto mt-4 space-y-4">
+            
+            <!-- 啟動按鈕 -->
+            <button id="btn-init" class="btn-touch w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-lg transition active:scale-95">
+                啟動相機
+            </button>
+
+            <!-- 註冊區塊 (初始隱藏) -->
+            <div id="register-panel" class="bg-gray-800 p-4 rounded-xl border border-gray-700 opacity-50 pointer-events-none transition-opacity shadow-xl">
+                <h3 class="font-bold text-green-400 mb-3 text-sm uppercase flex justify-between items-center">
+                    <span>➕ 新增記憶</span>
+                    <span class="text-[10px] text-gray-500 bg-gray-900 px-2 py-1 rounded">資料僅存本地</span>
+                </h3>
+                
+                <div class="flex flex-col gap-3">
+                    <input type="text" id="person-name" placeholder="輸入名字 (例: 小明)" class="btn-touch px-4 rounded-lg bg-gray-900 border border-gray-600 text-white outline-none focus:border-green-500 transition">
+                    
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="btn-touch flex items-center justify-center bg-gray-700 active:bg-gray-600 rounded-lg cursor-pointer transition text-gray-200 hover:text-white">
+                            <span class="text-sm font-bold">📷 選擇照片</span>
+                            <input type="file" id="upload-img" accept="image/*" class="hidden">
+                        </label>
+                        <button id="btn-register" class="btn-touch bg-green-600 active:bg-green-700 text-white rounded-lg font-bold shadow transition">
+                            註冊
+                        </button>
+                    </div>
+                </div>
+
+                <div class="mt-4 pt-3 border-t border-gray-700 text-xs text-gray-400 flex justify-between items-start">
+                    <div class="max-w-[70%]">
+                        <p class="mb-1">已記憶名單：</p>
+                        <p id="registered-list" class="text-white font-mono break-all">無</p>
+                    </div>
+                    <button id="btn-clear" class="text-red-400 border border-red-900/50 px-2 py-1 rounded bg-red-900/20 hover:bg-red-900/40 transition">
+                        清除資料
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 設定區
+        // ==========================================
+        const APP_PASSWORD = '1234'; // 預設密碼，請在此修改
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models'; // 模型來源
+        const DB_KEY = 'face_app_private_db'; // LocalStorage 儲存鍵值
+        
+        // ==========================================
+        // 變數宣告
+        // ==========================================
+        const loginScreen = document.getElementById('login-screen');
+        const appContainer = document.getElementById('app-container');
+        const passwordInput = document.getElementById('password-input');
+        const loginMsg = document.getElementById('login-msg');
+        const video = document.getElementById('video');
+        const btnInit = document.getElementById('btn-init');
+        const registerPanel = document.getElementById('register-panel');
+        const msgBox = document.getElementById('msg-box');
+        
+        let isModelLoaded = false;
+        let faceMatcher = null;
+        let labeledDescriptors = [];
+        let canvas = null;
+
+        // ==========================================
+        // 1. 登入系統
+        // ==========================================
+        document.getElementById('btn-login').addEventListener('click', checkLogin);
+        passwordInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') checkLogin(); });
+
+        function checkLogin() {
+            if (passwordInput.value === APP_PASSWORD) {
+                // 淡出登入畫面
+                loginScreen.style.opacity = '0';
+                setTimeout(() => {
+                    loginScreen.style.display = 'none';
+                    appContainer.classList.add('active'); // 顯示主程式
+                }, 300);
+            } else {
+                loginMsg.textContent = '密碼錯誤';
+                passwordInput.value = '';
+                passwordInput.classList.add('border-red-500');
+                setTimeout(() => passwordInput.classList.remove('border-red-500'), 1000);
+            }
+        }
+
+        window.logout = function() {
+            location.reload();
+        }
+
+        // ==========================================
+        // 2. 資料庫邏輯 (LocalStorage)
+        // ==========================================
+        function saveToDatabase() {
+            // 將 Float32Array 轉為普通陣列以便 JSON 儲存
+            const dataToSave = labeledDescriptors.map(ld => ({
+                label: ld.label,
+                descriptors: ld.descriptors.map(desc => Array.from(desc))
+            }));
+            localStorage.setItem(DB_KEY, JSON.stringify(dataToSave));
+        }
+
+        function loadFromDatabase() {
+            const dataStr = localStorage.getItem(DB_KEY);
+            if (!dataStr) return;
+            try {
+                const data = JSON.parse(dataStr);
+                // 還原為 FaceAPI 格式
+                labeledDescriptors = data.map(item => {
+                    const descriptors = item.descriptors.map(d => new Float32Array(d));
+                    return new faceapi.LabeledFaceDescriptors(item.label, descriptors);
+                });
+                if (labeledDescriptors.length > 0) {
+                    faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+                    updateListUI();
+                }
+            } catch (e) {
+                console.error('資料庫讀取錯誤', e);
+            }
+        }
+
+        // ==========================================
+        // 3. 核心功能
+        // ==========================================
+
+        // 按鈕 A: 初始化
+        btnInit.addEventListener('click', async () => {
+            btnInit.disabled = true;
+            toggleLoading(true, '正在下載 AI 模型 (約需 10 秒)...');
+            
+            try {
+                // 加載模型 (SSD MobileNet V1 較準確)
+                await Promise.all([
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                ]);
+
+                // 讀取舊資料
+                loadFromDatabase();
+
+                toggleLoading(true, '正在啟動相機...');
+
+                // 請求相機 (強制前鏡頭)
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: 'user', 
+                        width: { ideal: 640 }, 
+                        height: { ideal: 480 } 
+                    },
+                    audio: false
+                });
+                video.srcObject = stream;
+                
+                // 當影片開始播放
+                video.onloadedmetadata = () => {
+                    video.play();
+                    isModelLoaded = true;
+                    toggleLoading(false);
+                    btnInit.classList.add('hidden'); // 隱藏按鈕
+                    registerPanel.classList.remove('opacity-50', 'pointer-events-none'); // 啟用註冊區
+                    showMsg('系統就緒，請開始辨識或註冊', 'success');
+                    startDetectionLoop(); // 開始迴圈
+                };
+
+            } catch (err) {
+                toggleLoading(false);
+                btnInit.disabled = false;
+                showMsg(`錯誤：${err.message}`, 'error');
+            }
+        });
+
+        // 按鈕 B: 註冊
+        document.getElementById('btn-register').addEventListener('click', async () => {
+            const name = document.getElementById('person-name').value.trim();
+            const file = document.getElementById('upload-img').files[0];
+            
+            if (!name || !file) return showMsg('請輸入名字並選擇照片', 'error');
+            
+            toggleLoading(true, `正在分析 ${name} 的特徵...`);
+            
+            try {
+                const img = await faceapi.bufferToImage(file);
+                // 偵測單一人臉
+                const detection = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+                
+                if (!detection) throw new Error('照片中找不到清晰的人臉，請換一張');
+                
+                // 加入記憶
+                labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(name, [detection.descriptor]));
+                faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+                
+                // 存檔與更新 UI
+                saveToDatabase();
+                updateListUI();
+                
+                document.getElementById('person-name').value = '';
+                document.getElementById('upload-img').value = '';
+                showMsg(`成功記住：${name}`, 'success');
+                
+            } catch (e) {
+                showMsg(e.message, 'error');
+            } finally {
+                toggleLoading(false);
+            }
+        });
+
+        // 按鈕 C: 清除資料
+        document.getElementById('btn-clear').addEventListener('click', () => {
+            if(confirm('確定要清除所有已記憶的人臉資料嗎？此動作無法復原。')) {
+                localStorage.removeItem(DB_KEY);
+                labeledDescriptors = [];
+                faceMatcher = null;
+                updateListUI();
+                showMsg('資料已清空', 'info');
+            }
+        });
+
+        // ==========================================
+        // 4. 偵測迴圈 (Loop)
+        // ==========================================
+        async function startDetectionLoop() {
+            // 建立 Canvas
+            if (!canvas) {
+                canvas = faceapi.createCanvasFromMedia(video);
+                document.querySelector('.camera-wrapper').append(canvas);
+            }
+            const displaySize = { width: video.videoWidth, height: video.videoHeight };
+            faceapi.matchDimensions(canvas, displaySize);
+
+            // 每 100 毫秒執行一次
+            setInterval(async () => {
+                if (!isModelLoaded || video.paused) return;
+                
+                // 1. 偵測所有人臉
+                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                // 2. 調整尺寸
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                // 3. 清空畫布
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // 4. 繪製結果
+                resizedDetections.forEach(d => {
+                    let label = 'Unknown';
+                    let color = '#ef4444'; // 紅色 (未知)
+                    
+                    // 如果有資料庫，進行比對
+                    if (faceMatcher) {
+                        const match = faceMatcher.findBestMatch(d.descriptor);
+                        if (match.label !== 'unknown') {
+                            // 顯示名字與信心度 (距離越短信心越高)
+                            label = `${match.label} (${Math.round((1-match.distance)*100)}%)`;
+                            color = '#22c55e'; // 綠色 (認識)
+                        }
+                    }
+                    
+                    const box = d.detection.box;
+                    const drawBox = new faceapi.draw.DrawBox(box, { 
+                        label: label, 
+                        boxColor: color,
+                        drawLabelOptions: { backgroundColor: color } 
+                    });
+                    drawBox.draw(canvas);
+                });
+            }, 100);
+        }
+
+        // ==========================================
+        // 5. 輔助工具
+        // ==========================================
+        function toggleLoading(show, text) {
+            const spinner = document.getElementById('loading-spinner');
+            document.getElementById('loading-text').textContent = text;
+            spinner.className = show ? 'absolute inset-0 bg-black/90 flex flex-col justify-center items-center z-50' : 'hidden';
+        }
+        
+        function updateListUI() {
+            const list = document.getElementById('registered-list');
+            list.textContent = labeledDescriptors.length ? labeledDescriptors.map(d => d.label).join(', ') : '無';
+        }
+
+        function showMsg(text, type) {
+            msgBox.textContent = text;
+            msgBox.className = `w-full max-w-lg mx-auto mt-3 p-3 rounded-lg text-sm text-center font-bold shadow-md ${type === 'error' ? 'bg-red-500 text-white' : (type === 'success' ? 'bg-green-600 text-white' : 'bg-blue-600 text-white')}`;
+            msgBox.classList.remove('hidden');
+            setTimeout(() => msgBox.classList.add('hidden'), 3000);
+        }
+    </script>
+</body>
+</html>
