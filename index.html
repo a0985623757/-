@@ -14,7 +14,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         // =========================================================
-        // ✅ 修正重點：這裡絕對不能有空格，必須是連字號 (-)
+        // ✅ 修正重點：已確認 projectId 為連字號 (-)
         // =========================================================
         const firebaseConfig = {
             apiKey: "AIzaSyC5eV3l0HqPpPW773NHNlf2X7RwGKclYcM",
@@ -31,7 +31,7 @@
         const db = getFirestore(app);
         const auth = getAuth(app); 
 
-        // 掛載全域變數
+        // 掛載全域變數供主程式使用
         window.db = db;
         window.auth = auth;
         window.signInAnonymously = signInAnonymously;
@@ -42,6 +42,7 @@
         window.dbQuery = query;
         window.dbOrderBy = orderBy;
         
+        // 通知主程式 Firebase 已載入
         window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
@@ -126,16 +127,20 @@
         let labeledDescriptors = [];
         let canvas = null;
 
+        // 等待 Firebase 載入
         window.addEventListener('firebase-ready', () => {
             isFirebaseReady = true;
+            // 執行匿名登入
             window.signInAnonymously(window.auth)
                 .then(() => {
                     console.log("Firebase 匿名登入成功");
                 })
                 .catch((error) => {
                     console.error("登入失敗", error);
+                    // 不跳 alert，只在 console 顯示
                 });
 
+            // 監聽登入狀態
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
@@ -146,6 +151,7 @@
             });
         });
 
+        // 1. App 登入
         document.getElementById('btn-login').addEventListener('click', () => {
             if (document.getElementById('password-input').value === APP_PASSWORD) {
                 document.getElementById('login-screen').style.display = 'none';
@@ -155,6 +161,7 @@
             }
         });
 
+        // 2. 啟動相機
         document.getElementById('btn-init').addEventListener('click', async (e) => {
             if (!isAuthenticated) return alert('資料庫連線中，請稍候...(若卡住請重新整理)');
             
@@ -187,6 +194,7 @@
             }
         });
 
+        // 3. 批次上傳
         document.getElementById('batch-input').addEventListener('change', async (e) => {
             if (!isAuthenticated) return alert("權限不足：無法寫入資料庫");
             
@@ -234,6 +242,7 @@
             e.target.value = ''; 
         });
 
+        // 4. 即時監聽
         function setupRealtimeListener() {
             try {
                 const q = window.dbQuery(window.dbCollection(window.db, "faces"), window.dbOrderBy("timestamp", "desc"));
@@ -257,6 +266,7 @@
             }
         }
 
+        // 5. 辨識迴圈
         async function startDetectionLoop() {
             if (!canvas) {
                 canvas = faceapi.createCanvasFromMedia(video);
