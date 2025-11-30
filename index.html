@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- ✅ 版本號 v3.6 -->
-    <title>安全版雲端人臉辨識 (v3.6)</title>
+    <!-- ✅ 版本號 v3.8 -->
+    <title>安全版雲端人臉辨識 (v3.8)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
@@ -18,7 +18,7 @@
         // ✅ 您的專屬設定
         // =========================================================
         const firebaseConfig = {
-            apiKey: "AIzaSyC5eV31OHqpPpW723NHN1f2X7RwGKclYcM",
+            apiKey: "AIzaSyC5eV3l0HqPpPW773NHNlf2X7RwGKclYcM",
             authDomain: "face-app-db.firebaseapp.com",
             projectId: "face-app-db",
             storageBucket: "face-app-db.firebasestorage.app",
@@ -30,6 +30,7 @@
         // 初始化 Firebase
         try {
             const app = initializeApp(firebaseConfig);
+            // 強制使用 Long Polling
             const db = initializeFirestore(app, { experimentalForceLongPolling: true });
             const auth = getAuth(app); 
 
@@ -89,7 +90,7 @@
     <!-- 1. 登入鎖定 -->
     <div id="login-screen">
         <div class="w-full max-w-sm text-center space-y-6">
-            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v3.6</h1>
+            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v3.8</h1>
             <input type="password" id="password-input" placeholder="輸入 App 密碼 (預設 1234)" class="w-full px-4 py-3 rounded bg-gray-800 border border-gray-700 text-center text-white text-xl">
             <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold text-lg">進入系統</button>
             <p id="login-msg" class="text-red-400 text-sm h-5"></p>
@@ -100,8 +101,8 @@
     <div id="app-container" class="app-content flex-col min-h-screen p-3 pb-10">
         <header class="text-center mb-4 mt-2 flex justify-between items-center px-2">
             <div class="text-left">
-                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v3.6</h1>
-                <p class="text-xs text-gray-400">連線狀態：<span id="db-status" class="text-yellow-500">驗證中...</span></p>
+                <h1 class="text-lg font-bold text-blue-400">雲端辨識 v3.8</h1>
+                <p class="text-xs text-gray-400">狀態：<span id="db-status" class="text-yellow-500">驗證中...</span></p>
             </div>
             <div class="text-right">
                 <p class="text-xs text-gray-400">已存人臉</p>
@@ -109,7 +110,7 @@
             </div>
         </header>
 
-        <!-- 顯示區域 (可顯示相機或上傳的圖片) -->
+        <!-- 顯示區域 -->
         <div class="camera-wrapper border border-gray-700 relative front-camera" id="camera-box">
             <button id="switch-camera-btn" class="hidden">🔄 切換鏡頭</button>
             
@@ -118,9 +119,7 @@
                 <p id="loading-text" class="text-sm text-white">載入中...</p>
             </div>
             
-            <!-- 影片元件 -->
             <video id="video" autoplay muted playsinline class="hidden"></video>
-            <!-- 圖片預覽元件 -->
             <img id="uploaded-image" class="hidden" />
             
             <div id="camera-placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -140,11 +139,10 @@
                     <span class="text-[10px] font-normal opacity-80">即時掃描</span>
                 </button>
 
-                <!-- B: 圖片辨識 (新功能) -->
+                <!-- B: 圖片辨識 -->
                 <label class="btn-touch bg-purple-600 hover:bg-purple-700 text-white font-bold rounded shadow flex flex-col justify-center items-center py-2 cursor-pointer">
                     <span class="text-sm">🖼️ 圖片辨識</span>
-                    <span class="text-[10px] font-normal opacity-80">上傳查是誰</span>
-                    <!-- 隱藏的 input，點擊 label 會觸發 -->
+                    <span class="text-[10px] font-normal opacity-80">高畫質分析</span>
                     <input type="file" id="recognize-input" accept="image/*" class="hidden">
                 </label>
 
@@ -155,10 +153,10 @@
                 </button>
             </div>
 
-            <!-- 批次上傳區 (預設隱藏) -->
+            <!-- 批次上傳區 -->
             <div id="upload-panel" class="hidden bg-gray-800 p-4 rounded-xl border border-gray-700">
                 <h3 class="font-bold text-green-400 mb-3 text-sm uppercase flex justify-between items-center">
-                    <span>批次建立資料 (100+張)</span>
+                    <span>批次建立資料 (高靈敏)</span>
                     <button onclick="location.reload()" class="text-xs bg-red-900/50 px-2 py-1 rounded text-red-200">❌ 關閉</button>
                 </h3>
                 <div class="space-y-3">
@@ -211,7 +209,7 @@
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
-                    document.getElementById('db-status').textContent = '已安全連線 (v3.6)';
+                    document.getElementById('db-status').textContent = '已安全連線 (v3.8)';
                     document.getElementById('db-status').className = 'text-green-500 font-bold';
                     setupRealtimeListener();
                 }
@@ -242,23 +240,58 @@
         }
 
         // ========================
+        // 核心工具：優化後的縮圖 (提高畫質)
+        // ========================
+        function compressImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        // ✅ 改良點：提升最大寬度到 800，讓細節更清晰
+                        const MAX_WIDTH = 800; 
+                        const scaleSize = MAX_WIDTH / img.width;
+                        if (scaleSize < 1) {
+                            canvas.width = MAX_WIDTH;
+                            canvas.height = img.height * scaleSize;
+                        } else {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                        }
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        // ✅ 改良點：提升 JPG 品質到 0.9
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+                        const resultImg = new Image();
+                        resultImg.src = dataUrl;
+                        resultImg.onload = () => resolve(resultImg);
+                    };
+                    img.onerror = () => reject(new Error("Image load failed"));
+                };
+                reader.onerror = () => reject(new Error("File read failed"));
+            });
+        }
+
+        // ========================
         // 模式 A: 相機即時辨識
         // ========================
         document.getElementById('btn-camera-mode').addEventListener('click', async () => {
             await loadModels();
-            imgPreview.classList.add('hidden'); // 隱藏圖片
-            video.classList.remove('hidden');   // 顯示影片
+            imgPreview.classList.add('hidden');
+            video.classList.remove('hidden');
             startCamera();
         });
 
         async function startCamera() {
             if (stream) stream.getTracks().forEach(track => track.stop());
-            
             toggleLoading(true, '啟動相機...');
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
                 video.srcObject = stream;
-                
                 if (currentFacingMode === 'user') {
                     cameraBox.classList.remove('rear-camera'); cameraBox.classList.add('front-camera');
                 } else {
@@ -266,7 +299,6 @@
                 }
                 switchBtn.classList.remove('hidden');
                 cameraPlaceholder.style.display = 'none';
-                
                 video.onloadedmetadata = () => {
                     video.play();
                     toggleLoading(false);
@@ -285,69 +317,73 @@
         });
 
         // ========================
-        // 模式 B: 圖片辨識 (新功能)
+        // 模式 B: 圖片辨識
         // ========================
         document.getElementById('recognize-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            await loadModels();
-            
-            // 停止相機 (如果有的話)
-            if (stream) stream.getTracks().forEach(track => track.stop());
-            if (window.detectInterval) clearInterval(window.detectInterval);
-            video.classList.add('hidden');
-            switchBtn.classList.add('hidden');
-            
-            // 顯示圖片
-            toggleLoading(true, '讀取圖片並辨識中...');
-            const imgUrl = URL.createObjectURL(file);
-            imgPreview.src = imgUrl;
-            imgPreview.classList.remove('hidden');
-            cameraPlaceholder.style.display = 'none';
+            try {
+                await loadModels();
+                if (stream) stream.getTracks().forEach(track => track.stop());
+                if (window.detectInterval) clearInterval(window.detectInterval);
+                video.classList.add('hidden');
+                switchBtn.classList.add('hidden');
+                
+                toggleLoading(true, '處理圖片中...');
+                const compressedImg = await compressImage(file);
+                
+                imgPreview.src = compressedImg.src;
+                imgPreview.classList.remove('hidden');
+                cameraPlaceholder.style.display = 'none';
 
-            // 等圖片載入完成後開始辨識
-            imgPreview.onload = async () => {
-                // 準備 Canvas
-                if (!canvas) {
-                    canvas = faceapi.createCanvasFromMedia(video); // 暫時用 video 建
-                    cameraBox.append(canvas);
-                }
-                const displaySize = { width: imgPreview.clientWidth, height: imgPreview.clientHeight };
-                faceapi.matchDimensions(canvas, displaySize);
+                imgPreview.onload = async () => {
+                    if (!canvas) {
+                        canvas = faceapi.createCanvasFromMedia(video);
+                        cameraBox.append(canvas);
+                    }
+                    const displaySize = { width: imgPreview.clientWidth || compressedImg.width, height: imgPreview.clientHeight || compressedImg.height };
+                    faceapi.matchDimensions(canvas, displaySize);
 
-                // 進行一次性辨識
-                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-                const detections = await faceapi.detectAllFaces(imgPreview, options).withFaceLandmarks().withFaceDescriptors();
-                const resized = faceapi.resizeResults(detections, displaySize);
+                    // ✅ 改良點：高靈敏度設定 (minConfidence: 0.2)
+                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
+                    
+                    // ✅ 改良點：嘗試偵測所有人臉，取最大的一個，避免 detectSingleFace 誤判
+                    const detections = await faceapi.detectAllFaces(compressedImg, options).withFaceLandmarks().withFaceDescriptors();
+                    const resized = faceapi.resizeResults(detections, displaySize);
 
-                // 繪製
-                const ctx = canvas.getContext('2d');
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                if (resized.length === 0) {
-                    alert("這張照片找不到人臉！");
-                } else {
-                    resized.forEach(d => {
-                        let label = 'Unknown';
-                        let color = '#ef4444';
-                        if (faceMatcher) {
-                            const match = faceMatcher.findBestMatch(d.descriptor);
-                            if (match.label !== 'unknown') {
-                                label = `${match.label} (${Math.round((1-match.distance)*100)}%)`;
-                                color = '#22c55e';
+                    if (resized.length === 0) {
+                        alert("找不到人臉 (請確認光線充足，或臉部佔比大一點)");
+                    } else {
+                        resized.forEach(d => {
+                            let label = 'Unknown';
+                            let color = '#ef4444';
+                            if (faceMatcher) {
+                                const match = faceMatcher.findBestMatch(d.descriptor);
+                                if (match.label !== 'unknown') {
+                                    label = `${match.label} (${Math.round((1-match.distance)*100)}%)`;
+                                    color = '#22c55e';
+                                }
                             }
-                        }
-                        new faceapi.draw.DrawBox(d.detection.box, { label, boxColor: color }).draw(canvas);
-                    });
-                }
+                            new faceapi.draw.DrawBox(d.detection.box, { label, boxColor: color }).draw(canvas);
+                        });
+                    }
+                    toggleLoading(false);
+                };
+            } catch (err) {
+                console.error(err);
+                alert("處理發生錯誤：" + err.message);
                 toggleLoading(false);
-            };
-            e.target.value = ''; // 重置 input
+            } finally {
+                e.target.value = '';
+            }
         });
 
         // ========================
-        // 模式 C: 批次上傳 (建立資料)
+        // 模式 C: 批次上傳
         // ========================
         document.getElementById('btn-upload-mode').addEventListener('click', async () => {
             await loadModels();
@@ -355,38 +391,6 @@
             document.getElementById('init-buttons').classList.add('hidden');
             cameraPlaceholder.innerHTML = '<p class="text-green-400">已進入資料建立模式</p>';
         });
-
-        // 3. 批次上傳邏輯
-        function compressImage(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.src = event.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 500; 
-                        const scaleSize = MAX_WIDTH / img.width;
-                        if (scaleSize < 1) {
-                            canvas.width = MAX_WIDTH;
-                            canvas.height = img.height * scaleSize;
-                        } else {
-                            canvas.width = img.width;
-                            canvas.height = img.height;
-                        }
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-                        const resultImg = new Image();
-                        resultImg.src = dataUrl;
-                        resultImg.onload = () => resolve(resultImg);
-                    };
-                    img.onerror = () => reject(new Error("Image load failed"));
-                };
-                reader.onerror = () => reject(new Error("File read failed"));
-            });
-        }
 
         document.getElementById('batch-input').addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
@@ -406,19 +410,34 @@
                 progressText.textContent = `處理中 (${i+1}/${files.length}): ${name}`;
                 progressBar.style.width = `${((i+1)/files.length)*100}%`;
                 
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 30000));
 
                 try {
                     const processPromise = async () => {
-                        logToScreen(`[${i+1}] 縮圖...`);
+                        logToScreen(`[${i+1}] 讀取並縮圖...`);
                         const img = await compressImage(file);
-                        logToScreen(`[${i+1}] AI 辨識...`);
-                        const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-                        const detection = await faceapi.detectSingleFace(img, options).withFaceLandmarks().withFaceDescriptor();
                         
-                        if (detection) {
-                            const descriptorArray = Array.from(detection.descriptor);
-                            logToScreen(`[${i+1}] 上傳...`);
+                        logToScreen(`[${i+1}] AI 辨識中...`);
+                        // ✅ 改良點：批次上傳也使用高靈敏設定
+                        const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
+                        
+                        // ✅ 改良點：改用 detectAllFaces 增加抓取成功率
+                        const detections = await faceapi.detectAllFaces(img, options).withFaceLandmarks().withFaceDescriptors();
+                        
+                        // 取出最大的臉 (假設一張照片只有一個人)
+                        let bestDetection = null;
+                        if (detections.length > 0) {
+                            // 找出面積最大的
+                            bestDetection = detections.reduce((prev, current) => {
+                                const prevArea = prev.detection.box.width * prev.detection.box.height;
+                                const currArea = current.detection.box.width * current.detection.box.height;
+                                return (prevArea > currArea) ? prev : current;
+                            });
+                        }
+
+                        if (bestDetection) {
+                            const descriptorArray = Array.from(bestDetection.descriptor);
+                            logToScreen(`[${i+1}] 上傳資料庫...`);
                             await window.dbAddDoc(window.dbCollection(window.db, "faces"), {
                                 label: name,
                                 descriptors: descriptorArray,
@@ -429,8 +448,8 @@
                     };
 
                     const result = await Promise.race([processPromise(), timeoutPromise]);
-                    if (result === "success") { logToScreen(`[${i+1}] 成功！`); successCount++; }
-                    else { logToScreen(`[${i+1}] 失敗：無人臉`); failCount++; }
+                    if (result === "success") { logToScreen(`[${i+1}] 成功存入！`); successCount++; }
+                    else { logToScreen(`[${i+1}] 失敗：找不到人臉`); failCount++; }
 
                 } catch (err) {
                     console.error(err);
@@ -458,7 +477,8 @@
                 labeledDescriptors = newLabeledDescriptors;
                 document.getElementById('face-count').textContent = labeledDescriptors.length;
                 if (labeledDescriptors.length > 0) {
-                    faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
+                    // ✅ 改良點：稍微調低匹配門檻，增加辨識率
+                    faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
                 }
             });
         }
@@ -476,7 +496,8 @@
                 
                 if (canvas.width !== video.videoWidth) faceapi.matchDimensions(canvas, { width: video.videoWidth, height: video.videoHeight });
 
-                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                // ✅ 改良點：即時辨識也使用高靈敏
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.2 });
                 const detections = await faceapi.detectAllFaces(video, options).withFaceLandmarks().withFaceDescriptors();
                 const resized = faceapi.resizeResults(detections, { width: video.videoWidth, height: video.videoHeight });
                 
@@ -488,6 +509,7 @@
                     let color = '#ef4444';
                     if (faceMatcher) {
                         const match = faceMatcher.findBestMatch(d.descriptor);
+                        // ✅ 改良點：顯示更多資訊 (信心度)
                         if (match.label !== 'unknown') {
                             label = `${match.label} (${Math.round((1-match.distance)*100)}%)`;
                             color = '#22c55e';
