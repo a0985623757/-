@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- ✅ 版本號 v3.4 -->
-    <title>安全版雲端人臉辨識 (v3.4)</title>
+    <!-- ✅ 版本號 v3.6 -->
+    <title>安全版雲端人臉辨識 (v3.6)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
     <!-- 引入 Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        // ✅ 新增 initializeFirestore 用於設定強制連線模式
         import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy, initializeFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
@@ -31,12 +30,7 @@
         // 初始化 Firebase
         try {
             const app = initializeApp(firebaseConfig);
-            
-            // ✅ 關鍵修正：強制使用 Long Polling 模式，解決上傳卡死問題
-            const db = initializeFirestore(app, { 
-                experimentalForceLongPolling: true 
-            });
-            
+            const db = initializeFirestore(app, { experimentalForceLongPolling: true });
             const auth = getAuth(app); 
 
             window.db = db;
@@ -59,7 +53,15 @@
     <style>
         body { background-color: #0f172a; color: white; font-family: sans-serif; touch-action: manipulation; }
         .camera-wrapper { position: relative; width: 100%; max-width: 500px; margin: 0 auto; aspect-ratio: 3/4; background: #000; border-radius: 12px; overflow: hidden; }
-        video, canvas { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); position: absolute; inset: 0; }
+        
+        video, canvas, #uploaded-image { 
+            width: 100%; height: 100%; object-fit: contain; 
+            position: absolute; inset: 0; 
+        }
+        
+        .rear-camera video, .rear-camera canvas { transform: scaleX(1) !important; }
+        .front-camera video, .front-camera canvas { transform: scaleX(-1); }
+
         .btn-touch { min-height: 48px; font-size: 16px; }
         #login-screen { position: fixed; inset: 0; background: #0f172a; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; transition: opacity 0.3s; }
         .app-content { display: none; }
@@ -68,19 +70,17 @@
         .panel-disabled { opacity: 0.5; pointer-events: none; filter: grayscale(1); }
         .panel-enabled { opacity: 1; pointer-events: auto; filter: grayscale(0); transition: all 0.5s ease; border-color: #4ade80; }
         
-        /* 螢幕日誌區 */
         #debug-log {
-            font-family: monospace;
-            font-size: 11px;
-            color: #4ade80;
-            background: rgba(0,0,0,0.8);
-            height: 120px;
-            overflow-y: auto;
-            margin-top: 10px;
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid #444;
-            white-space: pre-wrap;
+            font-family: monospace; font-size: 11px; color: #4ade80;
+            background: rgba(0,0,0,0.8); height: 100px; overflow-y: auto;
+            margin-top: 10px; padding: 8px; border-radius: 4px; border: 1px solid #444; white-space: pre-wrap;
+        }
+        
+        #switch-camera-btn {
+            position: absolute; top: 10px; right: 10px; z-index: 20;
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.3);
+            color: white; padding: 8px 12px; border-radius: 20px; font-size: 14px;
+            backdrop-filter: blur(4px); cursor: pointer;
         }
     </style>
 </head>
@@ -89,7 +89,7 @@
     <!-- 1. 登入鎖定 -->
     <div id="login-screen">
         <div class="w-full max-w-sm text-center space-y-6">
-            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v3.4</h1>
+            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v3.6</h1>
             <input type="password" id="password-input" placeholder="輸入 App 密碼 (預設 1234)" class="w-full px-4 py-3 rounded bg-gray-800 border border-gray-700 text-center text-white text-xl">
             <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold text-lg">進入系統</button>
             <p id="login-msg" class="text-red-400 text-sm h-5"></p>
@@ -100,7 +100,7 @@
     <div id="app-container" class="app-content flex-col min-h-screen p-3 pb-10">
         <header class="text-center mb-4 mt-2 flex justify-between items-center px-2">
             <div class="text-left">
-                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v3.4</h1>
+                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v3.6</h1>
                 <p class="text-xs text-gray-400">連線狀態：<span id="db-status" class="text-yellow-500">驗證中...</span></p>
             </div>
             <div class="text-right">
@@ -109,15 +109,22 @@
             </div>
         </header>
 
-        <!-- 攝影機區 -->
-        <div class="camera-wrapper border border-gray-700 relative">
+        <!-- 顯示區域 (可顯示相機或上傳的圖片) -->
+        <div class="camera-wrapper border border-gray-700 relative front-camera" id="camera-box">
+            <button id="switch-camera-btn" class="hidden">🔄 切換鏡頭</button>
+            
             <div id="loading-spinner" class="absolute inset-0 bg-black/90 flex flex-col justify-center items-center z-50 hidden">
                 <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent mb-3"></div>
                 <p id="loading-text" class="text-sm text-white">載入中...</p>
             </div>
-            <video id="video" autoplay muted playsinline></video>
+            
+            <!-- 影片元件 -->
+            <video id="video" autoplay muted playsinline class="hidden"></video>
+            <!-- 圖片預覽元件 -->
+            <img id="uploaded-image" class="hidden" />
+            
             <div id="camera-placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <p class="text-gray-500 text-sm">相機未啟動</p>
+                <p class="text-gray-500 text-sm">請選擇下方模式</p>
             </div>
         </div>
 
@@ -125,27 +132,37 @@
 
         <div class="w-full max-w-lg mx-auto mt-4 space-y-4">
             
-            <!-- 雙功能按鈕 -->
-            <div class="grid grid-cols-2 gap-3" id="init-buttons">
+            <!-- 三大功能按鈕 -->
+            <div class="grid grid-cols-3 gap-2" id="init-buttons">
+                <!-- A: 相機辨識 -->
                 <button id="btn-camera-mode" class="btn-touch bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex flex-col justify-center items-center py-2">
-                    <span class="text-sm">📷 啟動相機</span>
-                    <span class="text-[10px] font-normal opacity-80">即時辨識 + 上傳</span>
+                    <span class="text-sm">📷 相機辨識</span>
+                    <span class="text-[10px] font-normal opacity-80">即時掃描</span>
                 </button>
+
+                <!-- B: 圖片辨識 (新功能) -->
+                <label class="btn-touch bg-purple-600 hover:bg-purple-700 text-white font-bold rounded shadow flex flex-col justify-center items-center py-2 cursor-pointer">
+                    <span class="text-sm">🖼️ 圖片辨識</span>
+                    <span class="text-[10px] font-normal opacity-80">上傳查是誰</span>
+                    <!-- 隱藏的 input，點擊 label 會觸發 -->
+                    <input type="file" id="recognize-input" accept="image/*" class="hidden">
+                </label>
+
+                <!-- C: 建立資料 -->
                 <button id="btn-upload-mode" class="btn-touch bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow flex flex-col justify-center items-center py-2 border border-gray-600">
-                    <span class="text-sm">📂 僅上傳照片</span>
-                    <span class="text-[10px] font-normal opacity-80">自動縮圖加速</span>
+                    <span class="text-sm">📂 建立資料</span>
+                    <span class="text-[10px] font-normal opacity-80">批次上傳</span>
                 </button>
             </div>
 
-            <!-- 批次上傳區 -->
-            <div id="upload-panel" class="bg-gray-800 p-4 rounded-xl border border-gray-700 panel-disabled transition-all duration-500">
-                <h3 class="font-bold text-green-400 mb-3 text-sm uppercase flex items-center gap-2">
-                    <span>批次建立資料 (強制連線版)</span>
-                    <span id="upload-status-icon" class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-500">等待初始化</span>
+            <!-- 批次上傳區 (預設隱藏) -->
+            <div id="upload-panel" class="hidden bg-gray-800 p-4 rounded-xl border border-gray-700">
+                <h3 class="font-bold text-green-400 mb-3 text-sm uppercase flex justify-between items-center">
+                    <span>批次建立資料 (100+張)</span>
+                    <button onclick="location.reload()" class="text-xs bg-red-900/50 px-2 py-1 rounded text-red-200">❌ 關閉</button>
                 </h3>
-                
                 <div class="space-y-3">
-                    <p class="text-xs text-gray-400">說明：支援大量照片，系統會自動縮圖以加快速度。</p>
+                    <p class="text-xs text-gray-400">說明：請將照片檔名取為人名。</p>
                     <label class="btn-touch flex items-center justify-center bg-gray-700 active:bg-gray-600 rounded cursor-pointer border border-gray-600 hover:bg-gray-600 transition group">
                         <span class="font-bold group-hover:text-green-400 transition">📂 點擊選擇照片</span>
                         <input type="file" id="batch-input" accept="image/*" multiple class="hidden">
@@ -156,7 +173,6 @@
                         </div>
                         <p id="progress-text" class="text-xs text-center text-gray-400">準備中...</p>
                     </div>
-                    <!-- 除錯日誌 -->
                     <div id="debug-log">系統日誌：等待操作...</div>
                 </div>
             </div>
@@ -168,15 +184,19 @@
         const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         
         const video = document.getElementById('video');
+        const imgPreview = document.getElementById('uploaded-image');
+        const cameraBox = document.getElementById('camera-box');
         const cameraPlaceholder = document.getElementById('camera-placeholder');
         const debugLog = document.getElementById('debug-log');
+        const switchBtn = document.getElementById('switch-camera-btn');
         
         let isModelLoaded = false;
-        let isFirebaseReady = false;
         let isAuthenticated = false; 
         let faceMatcher = null;
         let labeledDescriptors = [];
         let canvas = null;
+        let currentFacingMode = 'user';
+        let stream = null;
 
         function logToScreen(msg) {
             console.log(msg);
@@ -187,25 +207,12 @@
         }
 
         window.addEventListener('firebase-ready', () => {
-            isFirebaseReady = true;
-            window.signInAnonymously(window.auth)
-                .then(() => {
-                    logToScreen("Firebase 匿名登入成功");
-                })
-                .catch((error) => {
-                    console.error("登入失敗", error);
-                    logToScreen("登入失敗: " + error.code);
-                    const dbStatus = document.getElementById('db-status');
-                    dbStatus.textContent = '連線失敗';
-                    dbStatus.className = 'text-red-500 font-bold';
-                });
-
+            window.signInAnonymously(window.auth).catch(e => console.error(e));
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
-                    document.getElementById('db-status').textContent = '已安全連線 (v3.4)';
+                    document.getElementById('db-status').textContent = '已安全連線 (v3.6)';
                     document.getElementById('db-status').className = 'text-green-500 font-bold';
-                    logToScreen("已取得資料庫權限");
                     setupRealtimeListener();
                 }
             });
@@ -222,37 +229,42 @@
 
         async function loadModels() {
             if (isModelLoaded) return;
-            
-            if (!isAuthenticated) {
-                alert('請稍候，正在等待資料庫連線變為「綠燈」...');
-                throw new Error("Not authenticated");
-            }
+            if (!isAuthenticated) { alert('請稍候，資料庫連線中...'); throw new Error("Not authenticated"); }
 
             toggleLoading(true, '下載 AI 模型...');
-            logToScreen("開始下載 AI 模型...");
             await Promise.all([
                 faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
                 faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
                 faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
             ]);
             isModelLoaded = true;
-            logToScreen("AI 模型下載完成");
-            
-            const uploadPanel = document.getElementById('upload-panel');
-            uploadPanel.classList.remove('panel-disabled');
-            uploadPanel.classList.add('panel-enabled');
-            document.getElementById('upload-status-icon').textContent = '準備就緒';
-            document.getElementById('upload-status-icon').className = 'text-xs bg-green-900 px-2 py-1 rounded text-green-400';
-            
-            document.getElementById('init-buttons').classList.add('hidden');
+            toggleLoading(false);
         }
 
+        // ========================
+        // 模式 A: 相機即時辨識
+        // ========================
         document.getElementById('btn-camera-mode').addEventListener('click', async () => {
+            await loadModels();
+            imgPreview.classList.add('hidden'); // 隱藏圖片
+            video.classList.remove('hidden');   // 顯示影片
+            startCamera();
+        });
+
+        async function startCamera() {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            
+            toggleLoading(true, '啟動相機...');
             try {
-                await loadModels();
-                toggleLoading(true, '啟動相機中...');
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } });
                 video.srcObject = stream;
+                
+                if (currentFacingMode === 'user') {
+                    cameraBox.classList.remove('rear-camera'); cameraBox.classList.add('front-camera');
+                } else {
+                    cameraBox.classList.remove('front-camera'); cameraBox.classList.add('rear-camera');
+                }
+                switchBtn.classList.remove('hidden');
                 cameraPlaceholder.style.display = 'none';
                 
                 video.onloadedmetadata = () => {
@@ -263,24 +275,88 @@
             } catch (err) {
                 console.error(err);
                 toggleLoading(false);
-                if (err.message !== "Not authenticated") {
-                    alert("相機啟動失敗，但您仍可使用下方上傳功能。");
+                alert("相機啟動失敗");
+            }
+        }
+
+        switchBtn.addEventListener('click', () => {
+            currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+            startCamera();
+        });
+
+        // ========================
+        // 模式 B: 圖片辨識 (新功能)
+        // ========================
+        document.getElementById('recognize-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            await loadModels();
+            
+            // 停止相機 (如果有的話)
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            if (window.detectInterval) clearInterval(window.detectInterval);
+            video.classList.add('hidden');
+            switchBtn.classList.add('hidden');
+            
+            // 顯示圖片
+            toggleLoading(true, '讀取圖片並辨識中...');
+            const imgUrl = URL.createObjectURL(file);
+            imgPreview.src = imgUrl;
+            imgPreview.classList.remove('hidden');
+            cameraPlaceholder.style.display = 'none';
+
+            // 等圖片載入完成後開始辨識
+            imgPreview.onload = async () => {
+                // 準備 Canvas
+                if (!canvas) {
+                    canvas = faceapi.createCanvasFromMedia(video); // 暫時用 video 建
+                    cameraBox.append(canvas);
                 }
-            }
+                const displaySize = { width: imgPreview.clientWidth, height: imgPreview.clientHeight };
+                faceapi.matchDimensions(canvas, displaySize);
+
+                // 進行一次性辨識
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                const detections = await faceapi.detectAllFaces(imgPreview, options).withFaceLandmarks().withFaceDescriptors();
+                const resized = faceapi.resizeResults(detections, displaySize);
+
+                // 繪製
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                if (resized.length === 0) {
+                    alert("這張照片找不到人臉！");
+                } else {
+                    resized.forEach(d => {
+                        let label = 'Unknown';
+                        let color = '#ef4444';
+                        if (faceMatcher) {
+                            const match = faceMatcher.findBestMatch(d.descriptor);
+                            if (match.label !== 'unknown') {
+                                label = `${match.label} (${Math.round((1-match.distance)*100)}%)`;
+                                color = '#22c55e';
+                            }
+                        }
+                        new faceapi.draw.DrawBox(d.detection.box, { label, boxColor: color }).draw(canvas);
+                    });
+                }
+                toggleLoading(false);
+            };
+            e.target.value = ''; // 重置 input
         });
 
+        // ========================
+        // 模式 C: 批次上傳 (建立資料)
+        // ========================
         document.getElementById('btn-upload-mode').addEventListener('click', async () => {
-            try {
-                await loadModels();
-                toggleLoading(false);
-                cameraPlaceholder.innerHTML = '<p class="text-green-400">AI 已就緒<br>請使用下方按鈕上傳照片</p>';
-                alert("AI 模型載入完成！請點擊下方按鈕上傳照片。");
-            } catch (err) {
-                console.error(err);
-                toggleLoading(false);
-            }
+            await loadModels();
+            document.getElementById('upload-panel').classList.remove('hidden');
+            document.getElementById('init-buttons').classList.add('hidden');
+            cameraPlaceholder.innerHTML = '<p class="text-green-400">已進入資料建立模式</p>';
         });
 
+        // 3. 批次上傳邏輯
         function compressImage(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -301,7 +377,6 @@
                         }
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        
                         const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
                         const resultImg = new Image();
                         resultImg.src = dataUrl;
@@ -313,131 +388,97 @@
             });
         }
 
-        // 3. 批次上傳 (高靈敏 + 強制連線版)
         document.getElementById('batch-input').addEventListener('change', async (e) => {
-            if (!isAuthenticated) return alert("權限不足：無法寫入資料庫");
-            
             const files = Array.from(e.target.files);
             if (files.length === 0) return;
 
             const progressDiv = document.getElementById('upload-progress');
             const progressBar = document.getElementById('progress-bar');
             const progressText = document.getElementById('progress-text');
-            
             progressDiv.classList.remove('hidden');
-            let successCount = 0;
-            let failCount = 0;
-
+            
+            let successCount = 0; let failCount = 0;
             logToScreen(`開始處理 ${files.length} 張照片...`);
 
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const name = file.name.replace(/\.[^/.]+$/, ""); 
-                
                 progressText.textContent = `處理中 (${i+1}/${files.length}): ${name}`;
                 progressBar.style.width = `${((i+1)/files.length)*100}%`;
                 
-                // 放寬到 25 秒
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Timeout")), 25000)
-                );
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000));
 
                 try {
                     const processPromise = async () => {
-                        logToScreen(`[${i+1}] 讀取並縮圖...`);
+                        logToScreen(`[${i+1}] 縮圖...`);
                         const img = await compressImage(file);
-                        
-                        logToScreen(`[${i+1}] AI 辨識中...`);
-                        // 高靈敏設定
+                        logToScreen(`[${i+1}] AI 辨識...`);
                         const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
                         const detection = await faceapi.detectSingleFace(img, options).withFaceLandmarks().withFaceDescriptor();
                         
                         if (detection) {
                             const descriptorArray = Array.from(detection.descriptor);
-                            logToScreen(`[${i+1}] 上傳資料庫...`);
-                            
-                            // 這裡的上傳現在會使用 Long Polling，更不容易卡住
+                            logToScreen(`[${i+1}] 上傳...`);
                             await window.dbAddDoc(window.dbCollection(window.db, "faces"), {
                                 label: name,
                                 descriptors: descriptorArray,
                                 timestamp: new Date()
                             });
                             return "success";
-                        } else {
-                            return "no_face";
-                        }
+                        } else { return "no_face"; }
                     };
 
                     const result = await Promise.race([processPromise(), timeoutPromise]);
-
-                    if (result === "success") {
-                        logToScreen(`[${i+1}] 成功存入！`);
-                        successCount++;
-                    } else if (result === "no_face") {
-                        logToScreen(`[${i+1}] 失敗：找不到人臉`);
-                        failCount++;
-                    }
+                    if (result === "success") { logToScreen(`[${i+1}] 成功！`); successCount++; }
+                    else { logToScreen(`[${i+1}] 失敗：無人臉`); failCount++; }
 
                 } catch (err) {
                     console.error(err);
-                    if (err.message === "Timeout") {
-                        logToScreen(`[${i+1}] 跳過：網路傳輸逾時`);
-                    } else {
-                        logToScreen(`[${i+1}] 錯誤：${err.message}`);
-                    }
+                    logToScreen(`[${i+1}] 失敗：${err.message}`);
                     failCount++;
                 }
             }
-
-            const resultMsg = `處理完成！成功: ${successCount}，失敗: ${failCount}`;
-            progressText.textContent = resultMsg;
-            logToScreen(resultMsg);
-            
+            logToScreen(`完成！成功:${successCount}, 失敗:${failCount}`);
             setTimeout(() => progressDiv.classList.add('hidden'), 5000);
             e.target.value = ''; 
         });
 
+        // 4. 即時監聽與辨識迴圈
         function setupRealtimeListener() {
-            try {
-                const q = window.dbQuery(window.dbCollection(window.db, "faces"), window.dbOrderBy("timestamp", "desc"));
-                window.dbOnSnapshot(q, (querySnapshot) => {
-                    const newLabeledDescriptors = [];
-                    querySnapshot.forEach((doc) => {
-                        const data = doc.data();
-                        if (data.descriptors) {
-                            const descriptor = new Float32Array(data.descriptors);
-                            newLabeledDescriptors.push(new faceapi.LabeledFaceDescriptors(data.label, [descriptor]));
-                        }
-                    });
-
-                    labeledDescriptors = newLabeledDescriptors;
-                    document.getElementById('face-count').textContent = labeledDescriptors.length;
-
-                    if (labeledDescriptors.length > 0) {
-                        // 0.55 稍微寬容一點，增加辨識率
-                        faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
+            const q = window.dbQuery(window.dbCollection(window.db, "faces"), window.dbOrderBy("timestamp", "desc"));
+            window.dbOnSnapshot(q, (querySnapshot) => {
+                const newLabeledDescriptors = [];
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.descriptors) {
+                        const descriptor = new Float32Array(data.descriptors);
+                        newLabeledDescriptors.push(new faceapi.LabeledFaceDescriptors(data.label, [descriptor]));
                     }
                 });
-            } catch (e) {
-                console.error(e);
-            }
+                labeledDescriptors = newLabeledDescriptors;
+                document.getElementById('face-count').textContent = labeledDescriptors.length;
+                if (labeledDescriptors.length > 0) {
+                    faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.55);
+                }
+            });
         }
 
         async function startDetectionLoop() {
             if (!canvas) {
                 canvas = faceapi.createCanvasFromMedia(video);
-                document.querySelector('.camera-wrapper').append(canvas);
+                cameraBox.append(canvas);
             }
-            const displaySize = { width: video.videoWidth, height: video.videoHeight };
-            faceapi.matchDimensions(canvas, displaySize);
+            faceapi.matchDimensions(canvas, { width: video.videoWidth, height: video.videoHeight });
 
-            setInterval(async () => {
-                if (!isModelLoaded || video.paused) return;
+            if (window.detectInterval) clearInterval(window.detectInterval);
+            window.detectInterval = setInterval(async () => {
+                if (!isModelLoaded || video.paused || video.classList.contains('hidden')) return;
                 
-                // 相機即時辨識也用高靈敏設定
+                if (canvas.width !== video.videoWidth) faceapi.matchDimensions(canvas, { width: video.videoWidth, height: video.videoHeight });
+
                 const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
                 const detections = await faceapi.detectAllFaces(video, options).withFaceLandmarks().withFaceDescriptors();
-                const resized = faceapi.resizeResults(detections, displaySize);
+                const resized = faceapi.resizeResults(detections, { width: video.videoWidth, height: video.videoHeight });
                 
                 const ctx = canvas.getContext('2d');
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -445,7 +486,6 @@
                 resized.forEach(d => {
                     let label = 'Unknown';
                     let color = '#ef4444';
-                    
                     if (faceMatcher) {
                         const match = faceMatcher.findBestMatch(d.descriptor);
                         if (match.label !== 'unknown') {
