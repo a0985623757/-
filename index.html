@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- ✅ 版本號 v2.4 -->
-    <title>安全版雲端人臉辨識 (v2.4)</title>
+    <!-- ✅ 版本號 v2.6 -->
+    <title>安全版雲端人臉辨識 (v2.6)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
@@ -15,13 +15,12 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         // =========================================================
-        // ✅ 設定檔修正完畢
-        // 我已根據您的截圖，將易混淆的字元 (1 vs l, O vs 0) 全部校正
+        // ✅ 您的專屬設定
         // =========================================================
         const firebaseConfig = {
-            apiKey: "AIzaSyC5eV31OHqpPpW723NHN1f2X7RwGKclYcM", // 修正了這邊的 typo
+            apiKey: "AIzaSyC5eV31OHqpPpW723NHN1f2X7RwGKclYcM",
             authDomain: "face-app-db.firebaseapp.com",
-            projectId: "face-app-db", // 確認這裡是 face-app-db (連字號)
+            projectId: "face-app-db",
             storageBucket: "face-app-db.firebasestorage.app",
             messagingSenderId: "495259876006",
             appId: "1:495259876006:web:79c2baa8566fed159b1267",
@@ -34,7 +33,6 @@
             const db = getFirestore(app);
             const auth = getAuth(app); 
 
-            // 掛載全域變數供主程式使用
             window.db = db;
             window.auth = auth;
             window.signInAnonymously = signInAnonymously;
@@ -45,7 +43,6 @@
             window.dbQuery = query;
             window.dbOrderBy = orderBy;
             
-            // 通知主程式 Firebase 已載入
             window.dispatchEvent(new Event('firebase-ready'));
             console.log("Firebase SDK 載入成功");
         } catch (e) {
@@ -62,6 +59,10 @@
         #login-screen { position: fixed; inset: 0; background: #0f172a; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; transition: opacity 0.3s; }
         .app-content { display: none; }
         .app-content.active { display: flex; }
+        
+        /* 面板狀態 */
+        .panel-disabled { opacity: 0.5; pointer-events: none; filter: grayscale(1); }
+        .panel-enabled { opacity: 1; pointer-events: auto; filter: grayscale(0); transition: all 0.5s ease; border-color: #4ade80; }
     </style>
 </head>
 <body class="min-h-screen">
@@ -69,7 +70,7 @@
     <!-- 1. 登入鎖定 -->
     <div id="login-screen">
         <div class="w-full max-w-sm text-center space-y-6">
-            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v2.4</h1>
+            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v2.6</h1>
             <input type="password" id="password-input" placeholder="輸入 App 密碼 (預設 1234)" class="w-full px-4 py-3 rounded bg-gray-800 border border-gray-700 text-center text-white text-xl">
             <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold text-lg">進入系統</button>
             <p id="login-msg" class="text-red-400 text-sm h-5"></p>
@@ -80,7 +81,7 @@
     <div id="app-container" class="app-content flex-col min-h-screen p-3 pb-10">
         <header class="text-center mb-4 mt-2 flex justify-between items-center px-2">
             <div class="text-left">
-                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v2.4</h1>
+                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v2.6</h1>
                 <p class="text-xs text-gray-400">連線狀態：<span id="db-status" class="text-yellow-500">驗證中...</span></p>
             </div>
             <div class="text-right">
@@ -89,27 +90,50 @@
             </div>
         </header>
 
+        <!-- 攝影機區 (預設為黑色背景) -->
         <div class="camera-wrapper border border-gray-700 relative">
             <div id="loading-spinner" class="absolute inset-0 bg-black/90 flex flex-col justify-center items-center z-50 hidden">
                 <div class="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent mb-3"></div>
                 <p id="loading-text" class="text-sm text-white">載入中...</p>
             </div>
+            <!-- 如果不開相機，這裡就只會顯示黑色，不會報錯 -->
             <video id="video" autoplay muted playsinline></video>
+            <!-- 狀態提示文字 -->
+            <div id="camera-placeholder" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p class="text-gray-500 text-sm">相機未啟動</p>
+            </div>
         </div>
 
         <div id="msg-box" class="w-full max-w-lg mx-auto mt-3 p-3 rounded text-sm text-center hidden font-bold"></div>
 
         <div class="w-full max-w-lg mx-auto mt-4 space-y-4">
-            <button id="btn-init" class="btn-touch w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow">啟動相機</button>
+            
+            <!-- 雙功能按鈕區 -->
+            <div class="grid grid-cols-2 gap-3" id="init-buttons">
+                <!-- 按鈕 A: 完整功能 -->
+                <button id="btn-camera-mode" class="btn-touch bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex flex-col justify-center items-center py-2">
+                    <span class="text-sm">📷 啟動相機</span>
+                    <span class="text-[10px] font-normal opacity-80">即時辨識 + 上傳</span>
+                </button>
+
+                <!-- 按鈕 B: 純上傳模式 -->
+                <button id="btn-upload-mode" class="btn-touch bg-gray-700 hover:bg-gray-600 text-white font-bold rounded shadow flex flex-col justify-center items-center py-2 border border-gray-600">
+                    <span class="text-sm">📂 僅上傳照片</span>
+                    <span class="text-[10px] font-normal opacity-80">不開鏡頭 (省電)</span>
+                </button>
+            </div>
 
             <!-- 批次上傳區 -->
-            <div id="upload-panel" class="bg-gray-800 p-4 rounded-xl border border-gray-700 opacity-50 pointer-events-none transition-opacity">
-                <h3 class="font-bold text-green-400 mb-3 text-sm uppercase">批次建立資料 (100+張)</h3>
+            <div id="upload-panel" class="bg-gray-800 p-4 rounded-xl border border-gray-700 panel-disabled transition-all duration-500">
+                <h3 class="font-bold text-green-400 mb-3 text-sm uppercase flex items-center gap-2">
+                    <span>批次建立資料 (100+張)</span>
+                    <span id="upload-status-icon" class="text-xs bg-gray-900 px-2 py-1 rounded text-gray-500">等待初始化</span>
+                </h3>
                 
                 <div class="space-y-3">
                     <p class="text-xs text-gray-400">說明：請將照片檔名取為人名 (例如: <code>王小明.jpg</code>)，系統會自動讀取檔名作為標籤。</p>
-                    <label class="btn-touch flex items-center justify-center bg-gray-700 active:bg-gray-600 rounded cursor-pointer border border-gray-600 hover:bg-gray-600 transition">
-                        <span class="font-bold">📂 選擇多張照片 (批次上傳)</span>
+                    <label class="btn-touch flex items-center justify-center bg-gray-700 active:bg-gray-600 rounded cursor-pointer border border-gray-600 hover:bg-gray-600 transition group">
+                        <span class="font-bold group-hover:text-green-400 transition">📂 點擊選擇照片</span>
                         <input type="file" id="batch-input" accept="image/*" multiple class="hidden">
                     </label>
                     <div id="upload-progress" class="hidden">
@@ -128,6 +152,7 @@
         const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         
         const video = document.getElementById('video');
+        const cameraPlaceholder = document.getElementById('camera-placeholder');
         let isModelLoaded = false;
         let isFirebaseReady = false;
         let isAuthenticated = false; 
@@ -138,7 +163,6 @@
         // 等待 Firebase 載入
         window.addEventListener('firebase-ready', () => {
             isFirebaseReady = true;
-            // 執行匿名登入
             window.signInAnonymously(window.auth)
                 .then(() => {
                     console.log("Firebase 匿名登入成功");
@@ -146,16 +170,14 @@
                 .catch((error) => {
                     console.error("登入失敗", error);
                     const dbStatus = document.getElementById('db-status');
-                    dbStatus.textContent = '連線失敗 (API Key錯誤)';
+                    dbStatus.textContent = '連線失敗';
                     dbStatus.className = 'text-red-500 font-bold';
-                    alert("連線失敗！錯誤代碼：auth/api-key-not-valid\n這通常代表 GitHub 還沒更新到最新程式碼，請稍等 1 分鐘後重新整理。");
                 });
 
-            // 監聽登入狀態
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
-                    document.getElementById('db-status').textContent = '已安全連線 (v2.4)';
+                    document.getElementById('db-status').textContent = '已安全連線 (v2.6)';
                     document.getElementById('db-status').className = 'text-green-500 font-bold';
                     setupRealtimeListener();
                 }
@@ -172,40 +194,71 @@
             }
         });
 
-        // 2. 啟動相機
-        document.getElementById('btn-init').addEventListener('click', async (e) => {
-            if (!isAuthenticated) return alert('資料庫連線中，請稍候... (請確認網頁標題是否為 v2.4)');
+        // 共用的模型載入函式
+        async function loadModels() {
+            if (isModelLoaded) return;
             
-            e.target.disabled = true;
-            toggleLoading(true, '載入 AI 模型...');
-            
-            try {
-                await Promise.all([
-                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-                ]);
+            if (!isAuthenticated) {
+                alert('請稍候，正在等待資料庫連線變為「綠燈」...');
+                throw new Error("Not authenticated");
+            }
 
-                toggleLoading(true, '啟動相機...');
+            toggleLoading(true, '正在下載 AI 腦 (約 5-10 秒)...');
+            await Promise.all([
+                faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            ]);
+            isModelLoaded = true;
+            
+            // 解鎖上傳面板
+            const uploadPanel = document.getElementById('upload-panel');
+            uploadPanel.classList.remove('panel-disabled');
+            uploadPanel.classList.add('panel-enabled');
+            document.getElementById('upload-status-icon').textContent = '準備就緒';
+            document.getElementById('upload-status-icon').className = 'text-xs bg-green-900 px-2 py-1 rounded text-green-400';
+            
+            // 隱藏初始按鈕區 (避免重複點擊)
+            document.getElementById('init-buttons').classList.add('hidden');
+        }
+
+        // 2-A. 模式 A: 啟動相機 + 上傳
+        document.getElementById('btn-camera-mode').addEventListener('click', async () => {
+            try {
+                await loadModels();
+                toggleLoading(true, '啟動相機中...');
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
                 video.srcObject = stream;
+                cameraPlaceholder.style.display = 'none'; // 隱藏文字
                 
                 video.onloadedmetadata = () => {
                     video.play();
-                    isModelLoaded = true;
                     toggleLoading(false);
-                    e.target.classList.add('hidden');
-                    document.getElementById('upload-panel').classList.remove('opacity-50', 'pointer-events-none');
                     startDetectionLoop();
                 };
             } catch (err) {
-                alert(err.message);
-                e.target.disabled = false;
+                console.error(err);
+                toggleLoading(false);
+                if (err.message !== "Not authenticated") {
+                    alert("相機啟動失敗，但您仍可使用下方上傳功能。");
+                }
+            }
+        });
+
+        // 2-B. 模式 B: 僅上傳 (不開相機)
+        document.getElementById('btn-upload-mode').addEventListener('click', async () => {
+            try {
+                await loadModels();
+                toggleLoading(false);
+                cameraPlaceholder.innerHTML = '<p class="text-green-400">AI 已就緒<br>請使用下方按鈕上傳照片</p>';
+                alert("AI 模型載入完成！\n您現在可以直接點擊下方「選擇照片」開始批次上傳。");
+            } catch (err) {
+                console.error(err);
                 toggleLoading(false);
             }
         });
 
-        // 3. 批次上傳
+        // 3. 批次上傳邏輯
         document.getElementById('batch-input').addEventListener('change', async (e) => {
             if (!isAuthenticated) return alert("權限不足：無法寫入資料庫");
             
@@ -224,7 +277,7 @@
                 const file = files[i];
                 const name = file.name.replace(/\.[^/.]+$/, "");
                 
-                progressText.textContent = `處理中 (${i+1}/${files.length}): ${name}`;
+                progressText.textContent = `AI 正在讀取 (${i+1}/${files.length}): ${name}`;
                 progressBar.style.width = `${((i+1)/files.length)*100}%`;
 
                 try {
@@ -240,6 +293,7 @@
                         });
                         successCount++;
                     } else {
+                        console.warn(`失敗：無法在照片 ${name} 中偵測到人臉`);
                         failCount++;
                     }
                 } catch (err) {
@@ -248,8 +302,8 @@
                 }
             }
 
-            progressText.textContent = `完成！成功: ${successCount}, 失敗: ${failCount}`;
-            setTimeout(() => progressDiv.classList.add('hidden'), 3000);
+            progressText.textContent = `處理完成！成功存入: ${successCount} 人，失敗: ${failCount} 張`;
+            setTimeout(() => progressDiv.classList.add('hidden'), 5000);
             e.target.value = ''; 
         });
 
@@ -261,8 +315,10 @@
                     const newLabeledDescriptors = [];
                     querySnapshot.forEach((doc) => {
                         const data = doc.data();
-                        const descriptor = new Float32Array(data.descriptors);
-                        newLabeledDescriptors.push(new faceapi.LabeledFaceDescriptors(data.label, [descriptor]));
+                        if (data.descriptors) {
+                            const descriptor = new Float32Array(data.descriptors);
+                            newLabeledDescriptors.push(new faceapi.LabeledFaceDescriptors(data.label, [descriptor]));
+                        }
                     });
 
                     labeledDescriptors = newLabeledDescriptors;
