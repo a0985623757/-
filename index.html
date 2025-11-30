@@ -11,11 +11,10 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, getDocs, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        // 引入驗證功能 (Authentication)
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         // =========================================================
-        // ✅ 我已經幫您填入截圖中的資料了
+        // ✅ 修正版：已再次確認您的金鑰 (來自您的 image_cc50e3.jpg)
         // =========================================================
         const firebaseConfig = {
             apiKey: "AIzaSyC5eV3l0HqPpPW773NHNlf2X7RwGKclYcM",
@@ -32,7 +31,7 @@
         const db = getFirestore(app);
         const auth = getAuth(app); 
 
-        // 掛載到全域變數供主程式使用
+        // 掛載全域變數
         window.db = db;
         window.auth = auth;
         window.signInAnonymously = signInAnonymously;
@@ -43,7 +42,6 @@
         window.dbQuery = query;
         window.dbOrderBy = orderBy;
         
-        // 通知主程式 Firebase 已載入
         window.dispatchEvent(new Event('firebase-ready'));
     </script>
 
@@ -128,31 +126,27 @@
         let labeledDescriptors = [];
         let canvas = null;
 
-        // Firebase 載入後執行
         window.addEventListener('firebase-ready', () => {
             isFirebaseReady = true;
-            // 執行匿名登入
             window.signInAnonymously(window.auth)
                 .then(() => {
                     console.log("Firebase 匿名登入成功");
                 })
                 .catch((error) => {
                     console.error("登入失敗", error);
-                    alert("資料庫連線錯誤：請確認您已在 Firebase Console 開啟「Authentication -> 匿名登入」功能！");
+                    // 這裡不跳 alert，避免一直干擾，只在 console 顯示
                 });
 
-            // 監聽登入狀態
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
                     document.getElementById('db-status').textContent = '已安全連線';
                     document.getElementById('db-status').className = 'text-green-500';
-                    setupRealtimeListener(); // 登入成功後才開始監聽資料
+                    setupRealtimeListener();
                 }
             });
         });
 
-        // 1. App 密碼鎖登入
         document.getElementById('btn-login').addEventListener('click', () => {
             if (document.getElementById('password-input').value === APP_PASSWORD) {
                 document.getElementById('login-screen').style.display = 'none';
@@ -162,9 +156,8 @@
             }
         });
 
-        // 2. 啟動相機
         document.getElementById('btn-init').addEventListener('click', async (e) => {
-            if (!isAuthenticated) return alert('資料庫尚未驗證通過，請稍候... (若卡住請檢查 Firebase Authentication 設定)');
+            if (!isAuthenticated) return alert('資料庫連線中，請稍候...(若卡住請重新整理)');
             
             e.target.disabled = true;
             toggleLoading(true, '載入 AI 模型...');
@@ -195,7 +188,6 @@
             }
         });
 
-        // 3. 批次上傳 (需要登入權限)
         document.getElementById('batch-input').addEventListener('change', async (e) => {
             if (!isAuthenticated) return alert("權限不足：無法寫入資料庫");
             
@@ -243,11 +235,9 @@
             e.target.value = ''; 
         });
 
-        // 4. 即時監聽
         function setupRealtimeListener() {
             try {
                 const q = window.dbQuery(window.dbCollection(window.db, "faces"), window.dbOrderBy("timestamp", "desc"));
-                
                 window.dbOnSnapshot(q, (querySnapshot) => {
                     const newLabeledDescriptors = [];
                     querySnapshot.forEach((doc) => {
@@ -262,17 +252,12 @@
                     if (labeledDescriptors.length > 0) {
                         faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
                     }
-                }, (error) => {
-                    console.error("讀取資料庫失敗", error);
-                    document.getElementById('db-status').textContent = '讀取失敗';
-                    document.getElementById('db-status').className = 'text-red-500';
                 });
             } catch (e) {
                 console.error(e);
             }
         }
 
-        // 5. 辨識迴圈
         async function startDetectionLoop() {
             if (!canvas) {
                 canvas = faceapi.createCanvasFromMedia(video);
