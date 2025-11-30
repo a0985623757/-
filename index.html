@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>安全版雲端人臉辨識</title>
+    <!-- ✅ 更新標題：加入 (v2.0) 作為版本標記 -->
+    <title>安全版雲端人臉辨識 (v2.0)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     
@@ -14,7 +15,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         // =========================================================
-        // ✅ 修正重點：已確認 projectId 為連字號 (-)
+        // ✅ 再次確認：這裡的所有設定都不能有空格 (已修正)
         // =========================================================
         const firebaseConfig = {
             apiKey: "AIzaSyC5eV3l0HqPpPW773NHNlf2X7RwGKclYcM",
@@ -61,7 +62,7 @@
     <!-- 1. 登入鎖定 -->
     <div id="login-screen">
         <div class="w-full max-w-sm text-center space-y-6">
-            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫</h1>
+            <h1 class="text-2xl font-bold text-blue-400">安全人臉資料庫 v2.0</h1>
             <input type="password" id="password-input" placeholder="輸入 App 密碼 (預設 1234)" class="w-full px-4 py-3 rounded bg-gray-800 border border-gray-700 text-center text-white text-xl">
             <button id="btn-login" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded font-bold text-lg">進入系統</button>
             <p id="login-msg" class="text-red-400 text-sm h-5"></p>
@@ -72,7 +73,7 @@
     <div id="app-container" class="app-content flex-col min-h-screen p-3 pb-10">
         <header class="text-center mb-4 mt-2 flex justify-between items-center px-2">
             <div class="text-left">
-                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統</h1>
+                <h1 class="text-lg font-bold text-blue-400">雲端辨識系統 v2.0</h1>
                 <p class="text-xs text-gray-400">連線狀態：<span id="db-status" class="text-yellow-500">驗證中...</span></p>
             </div>
             <div class="text-right">
@@ -137,14 +138,18 @@
                 })
                 .catch((error) => {
                     console.error("登入失敗", error);
-                    // 不跳 alert，只在 console 顯示
+                    // ✅ 新增：在 UI 顯示錯誤
+                    const dbStatus = document.getElementById('db-status');
+                    dbStatus.textContent = '連線失敗 (API Key錯誤)';
+                    dbStatus.className = 'text-red-500 font-bold';
+                    alert("⚠️ 還是讀取到舊程式碼！\n請確認網頁標題是否包含 (v2.0)。\n如果沒有，請使用「無痕視窗」重新開啟網頁。");
                 });
 
             // 監聽登入狀態
             window.onAuthStateChanged(window.auth, (user) => {
                 if (user) {
                     isAuthenticated = true;
-                    document.getElementById('db-status').textContent = '已安全連線';
+                    document.getElementById('db-status').textContent = '已安全連線 (v2.0)';
                     document.getElementById('db-status').className = 'text-green-500';
                     setupRealtimeListener();
                 }
@@ -163,7 +168,7 @@
 
         // 2. 啟動相機
         document.getElementById('btn-init').addEventListener('click', async (e) => {
-            if (!isAuthenticated) return alert('資料庫連線中，請稍候...(若卡住請重新整理)');
+            if (!isAuthenticated) return alert('資料庫連線中，請稍候... (請確認網頁標題是否為 v2.0)');
             
             e.target.disabled = true;
             toggleLoading(true, '載入 AI 模型...');
@@ -266,7 +271,6 @@
             }
         }
 
-        // 5. 辨識迴圈
         async function startDetectionLoop() {
             if (!canvas) {
                 canvas = faceapi.createCanvasFromMedia(video);
